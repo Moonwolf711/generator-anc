@@ -120,4 +120,16 @@ TEST(silent_input_stays_bounded) {
     CHECK_LT(std::fabs(yPrev), 1e-6);  // output stays at zero with no disturbance
 }
 
+TEST(sync_phase_reseats_oscillator) {
+    eoc::EngineOrderCanceller c(8000.0, 3, 0.05);
+    c.setFrequency(120.0);
+    c.syncPhase(0.0);                       // spark at top-dead-center reference
+    CHECK_NEAR(c.referenceCos(1), 1.0, 1e-9);
+    CHECK_NEAR(c.referenceSin(1), 0.0, 1e-9);
+    const double pi = 3.14159265358979323846;
+    c.syncPhase(pi);                        // half a revolution later
+    CHECK_NEAR(c.referenceCos(1), -1.0, 1e-9);
+    CHECK_NEAR(c.referenceCos(2), 1.0, 1e-9);  // order 2 advances 2*pi -> back to 1
+}
+
 int main() { return minitest::run(); }
