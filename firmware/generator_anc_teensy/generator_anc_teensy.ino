@@ -11,7 +11,8 @@
 //
 // HARDWARE NOTES
 //  * Teensy 4.x pins are 3.3V ONLY -- never feed raw spark/ignition voltage to a pin.
-//    Condition the inductive pickup to a clean 0/3.3V pulse (clamp + comparator/transistor).
+//    Condition the inductive pickup to a clean 0/3.3V pulse. Recommended: opto-isolated
+//    (PC817) open-collector pulling TACH_PIN low per spark. Full build: docs/spark-tach.md.
 //  * Audio Shield = PJRC rev D (SGTL5000). Error mic on LINEIN (or MIC with bias).
 //  * Secondary path S_hat MUST be calibrated for your speaker/mic geometry (see setup()).
 //
@@ -245,8 +246,12 @@ void setup() {
         eocNode.eoc.setSecondaryPath(h, /*mag*/ 1.0, /*phaseRad*/ 0.0);
     }
 
-    pinMode(TACH_PIN, INPUT);
-    attachInterrupt(digitalPinToInterrupt(TACH_PIN), tachISR, RISING);
+    // Conditioner is opto-isolated open-collector (PC817): idle HIGH via the internal
+    // pull-up, the phototransistor pulls the pin LOW for each spark -> timestamp the
+    // FALLING edge (= the spark onset; avoids pulse-width jitter at the tail).
+    // If you instead build a push-pull comparator conditioner, use INPUT + RISING.
+    pinMode(TACH_PIN, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(TACH_PIN), tachISR, FALLING);
 
     TELEM.begin(TELEM_BAUD);  // ESP-12E telemetry link
     Serial.println("generator-anc ready. Send 'c' (engine OFF) to calibrate S_hat, then run.");
