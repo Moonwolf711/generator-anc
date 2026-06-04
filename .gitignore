@@ -5,3 +5,4 @@ outputs/
 *.exe
 .DS_Store
 captures/
+__pycache__/
