@@ -96,6 +96,12 @@ public:
     bool calFailed() const { return calFailedFlag_; }   // true if the last cal never heard the probe
     bool calDone() const { return calDoneFlag_; }        // true after a successful S_hat calibration
 
+    // ISR-safe parameter setters (called from loop(); guard the non-atomic writes the
+    // audio update() reads). Keeps the portable canceller class free of Teensy macros.
+    void setMu(double v)         { AudioNoInterrupts(); eoc.setMu(v);            AudioInterrupts(); }
+    void setOutputGain(double v) { AudioNoInterrupts(); eoc.setOutputGain(v);    AudioInterrupts(); }
+    void setActiveOrders(int n)  { AudioNoInterrupts(); eoc.setActiveOrders(n);  AudioInterrupts(); }
+
     void update(void) override {
         audio_block_t* in = receiveReadOnly(0);
         if (!in) return;
@@ -133,6 +139,7 @@ private:
         // Without a phase reference there is nothing to cancel; adapting would wind up on noise.
         const uint32_t staleCyc = (uint32_t)(2.0 * (double)F_CPU_ACTUAL / (RPM_MIN / 60.0));
         if (!valid || rp == 0 || (uint32_t)(now - ls) > staleCyc) {
+            tachValid = false;   // no recent spark -> report idle, not a stale "lock" (ISR re-sets on next spark)
             for (int i = 0; i < AUDIO_BLOCK_SAMPLES; ++i) out->data[i] = 0;
             return;
         }
@@ -180,6 +187,8 @@ private:
         if (mag > calMaxMag) calMaxMag = mag;
         const double sStore = mag < S_FLOOR ? S_FLOOR : mag;   // keep the FxLMS norm finite on weak orders
         eoc.setSecondaryPath(calOrder, sStore, ph);
+        // NOTE: these prints run inside the audio update(), but calibration is engine-OFF so there
+        // is no real-time audio to protect, and Teensy's DMA serial does not block here in practice.
         Serial.print("  S_hat order "); Serial.print(calOrder);
         Serial.print(" @ "); Serial.print(calOrder * calF0, 1); Serial.print(" Hz");
         Serial.print(": |S|="); Serial.print(mag, 4);
@@ -292,16 +301,16 @@ static void applyCommand(const char* s) {
         int i = 0; while (p[i] && p[i] != ' ' && i < 11) { name[i] = p[i]; ++i; }
         const char* sp = strchr(p, ' ');
         const double val = sp ? atof(sp + 1) : 0.0;
-        if      (strcmp(name, "mu")      == 0) eocNode.eoc.setMu(val);
-        else if (strcmp(name, "orders")  == 0) eocNode.eoc.setActiveOrders((int)val);
-        else if (strcmp(name, "gain")    == 0) eocNode.eoc.setOutputGain(val);
+        if      (strcmp(name, "mu")      == 0) eocNode.setMu(val);
+        else if (strcmp(name, "orders")  == 0) eocNode.setActiveOrders((int)val);
+        else if (strcmp(name, "gain")    == 0) eocNode.setOutputGain(val);
         else if (strcmp(name, "cal_rpm") == 0) g_calRpm = val;
     } else if (s[0] == 'c') {
         eocNode.startCalibration(g_calRpm / 60.0);  // engine OFF, probe at the real orders
     } else if (s[0] == 'r') {
-        eocNode.eoc.setOutputGain(1.0);                    // run: unmute anti-noise
+        eocNode.setOutputGain(1.0);                        // run: unmute anti-noise
     } else if (s[0] == 's') {
-        eocNode.eoc.setOutputGain(0.0);                    // stop: mute output, keep weights
+        eocNode.setOutputGain(0.0);                        // stop: mute output, keep weights
     }
 }
 

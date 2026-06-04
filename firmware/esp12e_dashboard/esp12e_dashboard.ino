@@ -22,10 +22,12 @@ const char* AP_PASS = "";              // open AP; set a password if you want
 
 ESP8266WebServer server(80);
 
+// MUST MATCH NUM_ORDERS in generator_anc_teensy.ino -- the CSV telemetry protocol is coupled to it.
+static constexpr int NUM_ORDERS = 6;
 float    g_f0 = 0, g_rpm = 0, g_cpu = 0, g_mu = 0, g_gain = 0;
-float    g_ord[6] = {0,0,0,0,0,0};
-float    g_smag[6] = {0,0,0,0,0,0};
-int      g_lock = 0, g_orders = 6, g_mode = 0, g_cal = 0;
+float    g_ord[NUM_ORDERS]  = {0};
+float    g_smag[NUM_ORDERS] = {0};
+int      g_lock = 0, g_orders = NUM_ORDERS, g_mode = 0, g_cal = 0;
 uint32_t g_last = 0;
 char     buf[200];
 int      buflen = 0;
@@ -43,20 +45,22 @@ const char* modeStr(int m) {
 void parseLine(const char* s) {
     // ANC,f0,rpm,o1..o6,cpu,lock[,mu,orders,gain,mode,cal,s1..s6]
     if (strncmp(s, "ANC,", 4) != 0) return;
-    float v[21]; int n = 0;
+    constexpr int N = NUM_ORDERS;
+    constexpr int MAXF = 9 + 2 * N;            // f0,rpm,o*N,cpu,lock,mu,orders,gain,mode,cal,s*N
+    float v[MAXF]; int n = 0;
     const char* p = s + 4;
-    while (n < 21 && *p) {
+    while (n < MAXF && *p) {
         v[n++] = atof(p);
         const char* c = strchr(p, ',');
         if (!c) break;
         p = c + 1;
     }
-    if (n >= 10) {
+    if (n >= 4 + N) {                          // need at least f0,rpm,o*N,cpu,lock
         g_f0 = v[0]; g_rpm = v[1];
-        for (int i = 0; i < 6; ++i) g_ord[i] = v[2 + i];
-        g_cpu = v[8]; g_lock = (int)v[9];
-        if (n >= 14) { g_mu = v[10]; g_orders = (int)v[11]; g_gain = v[12]; g_mode = (int)v[13]; }
-        if (n >= 21) { g_cal = (int)v[14]; for (int i = 0; i < 6; ++i) g_smag[i] = v[15 + i]; }
+        for (int i = 0; i < N; ++i) g_ord[i] = v[2 + i];
+        g_cpu = v[2 + N]; g_lock = (int)v[3 + N];
+        if (n >= 8 + N) { g_mu = v[4 + N]; g_orders = (int)v[5 + N]; g_gain = v[6 + N]; g_mode = (int)v[7 + N]; }
+        if (n >= MAXF)  { g_cal = (int)v[8 + N]; for (int i = 0; i < N; ++i) g_smag[i] = v[9 + N + i]; }
         g_last = millis();
     }
 }
@@ -68,9 +72,9 @@ String dataJson() {
                ",\"mu\":" + String(g_mu,4) + ",\"orders\":" + String(g_orders) +
                ",\"gain\":" + String(g_gain,2) + ",\"mode\":\"" + modeStr(g_mode) +
                "\",\"cal\":" + String(g_cal) + ",\"ord\":[";
-    for (int i = 0; i < 6; ++i) { j += String(g_ord[i],3); if (i < 5) j += ","; }
+    for (int i = 0; i < NUM_ORDERS; ++i) { j += String(g_ord[i],3); if (i < NUM_ORDERS - 1) j += ","; }
     j += "],\"smag\":[";
-    for (int i = 0; i < 6; ++i) { j += String(g_smag[i],3); if (i < 5) j += ","; }
+    for (int i = 0; i < NUM_ORDERS; ++i) { j += String(g_smag[i],3); if (i < NUM_ORDERS - 1) j += ","; }
     j += "]}";
     return j;
 }

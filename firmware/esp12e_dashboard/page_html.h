@@ -92,7 +92,7 @@ var cvs=document.getElementById('comb'),ctx=cvs.getContext('2d');
 var ND=6, ord=[0,0,0,0,0,0], f0=30.5, drag={};   // drag = sliders the user is touching (don't overwrite)
 
 function draw(){
-  var W=cvs.clientWidth,H=cvs.clientHeight,dpr=2;
+  var W=cvs.clientWidth,H=cvs.clientHeight,dpr=window.devicePixelRatio||1;
   if(cvs.width!=W*dpr){cvs.width=W*dpr;cvs.height=H*dpr;}
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
   var padB=22,padT=8,n=ND,gap=10,bw=(W-gap*(n+1))/n,mx=Math.max(0.0001,...ord);

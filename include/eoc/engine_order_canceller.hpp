@@ -71,7 +71,7 @@ public:
     void setSecondaryPath(int order, double magnitude, double phaseRad) {
         const std::size_t i = static_cast<std::size_t>(order - 1);
         if (i >= static_cast<std::size_t>(H_)) return;
-        sMag_[i] = magnitude;
+        sMag_[i] = magnitude < kSFloor ? kSFloor : magnitude;   // never 0: keeps the NLMS norm sane
         sCos_[i] = std::cos(phaseRad);
         sSin_[i] = std::sin(phaseRad);
     }
@@ -175,8 +175,14 @@ public:
     }
 
     // Current oscillator phasor for `order` (1-based) -- for tests/firmware introspection.
-    double referenceCos(int order) const { return cos_[static_cast<std::size_t>(order - 1)]; }
-    double referenceSin(int order) const { return sin_[static_cast<std::size_t>(order - 1)]; }
+    double referenceCos(int order) const {
+        const std::size_t i = static_cast<std::size_t>(order - 1);
+        return i < static_cast<std::size_t>(H_) ? cos_[i] : 0.0;
+    }
+    double referenceSin(int order) const {
+        const std::size_t i = static_cast<std::size_t>(order - 1);
+        return i < static_cast<std::size_t>(H_) ? sin_[i] : 0.0;
+    }
 
     int numOrders() const { return H_; }
     double frequency() const { return f0_; }
@@ -192,6 +198,7 @@ public:
 private:
     static constexpr double kPi = 3.14159265358979323846;
     static constexpr double kEps = 1e-12;
+    static constexpr double kSFloor = 0.01;   // floor |S| so a zero can't blow up the NLMS norm
     static constexpr int kRenormEvery = 1024;
 
     double fs_;
