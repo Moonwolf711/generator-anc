@@ -68,13 +68,9 @@ function MaxBoard({ connections }) {
         <span className="board-sub">I²S class-D amp</span>
       </div>
       <div className="pin-row max-row">
-        {A.MAX_PINS.map((p) => {
-          const empty = A.MAX_LEAVE_EMPTY.includes(p);
-          return (
-            <Pad key={"m" + p} label={p} role={A.MAX_USED[p]} connected={isConn(p)}
-                 active={false} />
-          );
-        })}
+        {A.MAX_PINS.map((p) => (
+          <Pad key={"m" + p} label={p} role={A.MAX_USED[p]} connected={isConn(p)} active={false} />
+        ))}
       </div>
       <div className="max-mid">
         <span className="max-chip" />
@@ -95,8 +91,8 @@ function RoleDot({ role }) {
 }
 
 /* ---------- horizontal meter bar ---------- */
-function Meter({ label, value, max, unit, color, sub, invert }) {
-  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+function Meter({ label, value, min = 0, max, unit, color, sub }) {
+  const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
   return (
     <div className="meter">
       <div className="meter-top">

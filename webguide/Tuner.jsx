@@ -27,9 +27,7 @@ function CaptureTuner() {
   const [redDb, setRed]   = useT(18);               // per-order cancellation depth (dB)
   const [cutoff, setCut]  = useT(200);              // speaker usable top (Hz)
 
-  if (!G) return <div className="tuner-missing">genset_spectrum.js not loaded — run the capture export.</div>;
-
-  const raw = G.raw, n = raw.length, fmax = G.fmax;
+  const raw = G ? G.raw : [], n = raw.length, fmax = G ? G.fmax : 360;
   const fAt = (i) => (i / (n - 1)) * fmax;
 
   // targeted order frequencies that the speaker can actually reproduce
@@ -56,10 +54,13 @@ function CaptureTuner() {
   const tonalDb = 10 * Math.log10(ta / tb);
 
   useTE(() => {
-    const c = cvs.current, ctx = c.getContext("2d");
-    const W = c.clientWidth, H = c.clientHeight;
-    if (c.width !== W * 2) { c.width = W * 2; c.height = H * 2; }
-    ctx.setTransform(2, 0, 0, 2, 0, 0);
+    const c = cvs.current;
+    if (!G || !c) return;
+    const draw = () => {
+    const ctx = c.getContext("2d");
+    const W = c.clientWidth, H = c.clientHeight, dpr = window.devicePixelRatio || 1;
+    if (c.width !== W * dpr) { c.width = W * dpr; c.height = H * dpr; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
     const padL = 8, padB = 18, padT = 8;
     const x = (f) => padL + (f / fmax) * (W - padL - 8);
@@ -100,7 +101,13 @@ function CaptureTuner() {
     ctx.beginPath();
     resid.forEach((v, i) => { const xi = x(fAt(i)); i ? ctx.lineTo(xi, y(v)) : ctx.moveTo(xi, y(v)); });
     ctx.strokeStyle = "#2dd4a7"; ctx.lineWidth = 1.6; ctx.shadowColor = "#2dd4a7"; ctx.shadowBlur = 6; ctx.stroke(); ctx.shadowBlur = 0;
+    };
+    draw();
+    const ro = new ResizeObserver(draw); ro.observe(c);   // redraw on rotate/resize
+    return () => ro.disconnect();
   }, [f0, orders, redDb, cutoff]);
+
+  if (!G) return <div className="tuner-missing">genset_spectrum.js not loaded — run the capture export.</div>;
 
   return (
     <div className="tuner">

@@ -12,8 +12,9 @@ function Spectrum({ stateRef }) {
     let raf, t = 0;
     const draw = () => {
       const W = c.clientWidth, H = c.clientHeight;
-      if (c.width !== W * 2) { c.width = W * 2; c.height = H * 2; }
-      ctx.setTransform(2, 0, 0, 2, 0, 0);
+      const dpr = window.devicePixelRatio || 1;
+      if (c.width !== W * dpr) { c.width = W * dpr; c.height = H * dpr; }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
       const s = stateRef.current;
       const padL = 6, padB = 18, padT = 8;
@@ -119,7 +120,7 @@ function Dashboard({ connections, onBack }) {
   const [log, setLog] = useS([
     { k: "sys", t: "Teensy 4.0 · ANC firmware ready · fs=44.1kHz" },
   ]);
-  const sweepRef = useR(0);
+  const calStepRef = useR(null);
   const stateRef = useR({ mode: "idle", engineOn: false, reduction: 0, sweepHz: 30 });
   const logRef = useR(null);
 
@@ -154,18 +155,22 @@ function Dashboard({ connections, onBack }) {
     return () => clearInterval(id);
   }, [mode, engineOn]);
 
+  // clean up the calibration sweep interval if Dashboard unmounts mid-sweep
+  useE(() => () => clearInterval(calStepRef.current), []);
+
   const calibrate = () => {
     if (engineOn) { push("warn", "! turn the engine OFF before calibrating"); return; }
     setMode("calibrating");
     push("tx", "> c");
     push("rx", "calibrating secondary path Ŝ — sweep 30→300 Hz");
-    let hz = 30; sweepRef.current = 30; stateRef.current.sweepHz = 30;
-    const step = setInterval(() => {
-      hz += 7; sweepRef.current = hz; stateRef.current.sweepHz = hz;
+    let hz = 30; stateRef.current.sweepHz = 30;
+    clearInterval(calStepRef.current);
+    calStepRef.current = setInterval(() => {
+      hz += 7; stateRef.current.sweepHz = hz;
       setM((p) => ({ ...p, conf: Math.min(96, p.conf + 2.4) }));
       if (hz % 60 < 7) push("rx", `  Ŝ[${Math.round((hz - 30) / 6)}]  ${hz} Hz  mag=${(0.4 + Math.random() * 0.5).toFixed(2)}`);
       if (hz >= 300) {
-        clearInterval(step);
+        clearInterval(calStepRef.current);
         push("ok", "Ŝ estimated · 48 taps · confidence 96%");
         push("rx", "ready — send  r  to run ANC");
         setMode("calibrated");
@@ -192,7 +197,7 @@ function Dashboard({ connections, onBack }) {
   };
 
   const canCal = wired && mode !== "calibrating";
-  const canRun = (mode === "calibrated") && mode !== "running";
+  const canRun = mode === "calibrated";
   const reductionPct = Math.round((m.reduction / 18) * 100);
 
   return (
@@ -225,7 +230,7 @@ function Dashboard({ connections, onBack }) {
       <div className="metrics">
         <Meter label="Noise reduction" value={m.reduction} max={18} unit="dB" color="#2dd4a7"
           sub={mode === "running" && engineOn ? `${reductionPct}% of engine orders` : "ANC idle"} />
-        <Meter label="Residual @ mic" value={m.residual} max={0} unit="dB" color="#4cc9f0"
+        <Meter label="Residual @ mic" value={m.residual} min={-60} max={0} unit="dB" color="#4cc9f0"
           sub="SM58 → Komplete A2" />
         <Meter label="Ŝ confidence" value={m.conf} max={100} unit="%" color="#ffb703"
           sub={mode === "idle" ? "not calibrated" : "secondary path"} />
