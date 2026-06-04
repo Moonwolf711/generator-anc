@@ -53,12 +53,18 @@ IMP 2 DI with GROUND LIFT on the line-level run to the amp -> kills the genset's
 The controller needs the **secondary path** `Ŝ` — the speaker→error-mic magnitude and phase at each
 harmonic. Without it, it won't cancel (and a 180°-wrong `Ŝ` makes it worse — proven in the unit tests).
 
-One-time procedure (engine off, rig in final geometry):
-1. For each order frequency, emit a unit cosine from the anti-noise speaker.
-2. Correlate the mic signal against cos/sin to get magnitude and phase.
-3. Call `eoc.setSecondaryPath(h, mag, phase)` with those values.
+**Automated (one key):** engine off, speaker + mic in final position, send **`c`** over the Serial
+Monitor. The firmware sweeps each order, emits a probe tone from the sub, correlates the mic, fills
+`Ŝ` automatically, prints the measured `mag`/`phase` per order, then drops into RUN. Takes ~1–2 s.
+(The measurement math is verified by the desktop test `secondary_path_calibration_recovers_response`.)
 
-`setup()` currently loads unity/zero placeholders — correct only if the speaker and mic are co-located.
+It calibrates at `NOMINAL_CAL_RPM` (default 3000 → 50 Hz fundamental); `Ŝ` varies slowly with
+frequency, so a single point per order is the v1. `setup()` still loads unity placeholders as a
+fallback until you run `c`.
+
+Amp settings during cal **must match the live run** (LPF max, bass-boost OFF, subsonic OFF, same gain)
+— `Ŝ` captures the whole electrical+acoustic path including the amp, so changing it afterward invalidates
+the calibration.
 
 ## How well it works / limits
 

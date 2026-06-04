@@ -31,6 +31,7 @@ static constexpr double LEAK        = 1e-6;    // weight leakage
 // RPM gate for the tach debounce (reject ignition ringing / dropouts):
 static constexpr double RPM_MIN     = 1200.0;  // -> 20 Hz rev
 static constexpr double RPM_MAX     = 4200.0;  // -> 70 Hz rev
+static constexpr double NOMINAL_CAL_RPM = 3000.0;  // engine-off S_hat cal point (mid-range)
 
 // ----------------------- audio graph -----------------------
 AudioInputI2S        i2sIn;
@@ -45,33 +46,29 @@ public:
 
     eoc::EngineOrderCanceller eoc;
 
+    // Start engine-off secondary-path calibration at nominal fundamental f0nom (Hz).
+    // Emits a probe tone per order from the anti-noise speaker and correlates the mic
+    // (quadrature) to recover |S| and angle S -> setSecondaryPath. Verified by the
+    // desktop unit test `secondary_path_calibration_recovers_response`.
+    void startCalibration(double f0nom) {
+        calF0 = f0nom;
+        calOrder = 1;
+        calMode = true;
+        Serial.print("calibrating S_hat at nominal f0=");
+        Serial.print(f0nom, 1);
+        Serial.println(" Hz -- engine OFF, speaker+mic in final position");
+        startOrder();
+    }
+
+    bool calibrating() const { return calMode; }
+
     void update(void) override {
         audio_block_t* in = receiveReadOnly(0);
         if (!in) return;
         audio_block_t* out = allocate();
         if (!out) { release(in); return; }
-
-        // phase-lock to the engine from the latest spark
-        const uint32_t now = ARM_DWT_CYCCNT;
-        noInterrupts();
-        const uint32_t ls = lastSparkCyc;
-        const uint32_t rp = revPeriodCyc;
-        const bool valid  = tachValid;
-        interrupts();
-        if (valid && rp > 0) {
-            const double theta0 = 6.283185307179586 * (double)(uint32_t)(now - ls) / (double)rp;
-            const double f0     = (double)F_CPU_ACTUAL / (double)rp;
-            eoc.setFrequency(f0);
-            eoc.syncPhase(theta0);
-        }
-
-        for (int i = 0; i < AUDIO_BLOCK_SAMPLES; ++i) {
-            const float e = (float)in->data[i] * (1.0f / 32768.0f);   // error mic, int16 -> float
-            float y = eoc.process(e);                                  // anti-noise
-            if (y >  0.98f) y =  0.98f;
-            if (y < -0.98f) y = -0.98f;
-            out->data[i] = (int16_t)(y * 32767.0f);
-        }
+        if (calMode) calProcess(in, out);
+        else         runProcess(in, out);
         transmit(out);
         release(out);
         release(in);
@@ -83,6 +80,76 @@ public:
     static volatile bool     tachValid;
 
 private:
+    static constexpr double kTwoPi    = 6.283185307179586;
+    static constexpr double CAL_AMP   = 0.30;    // probe amplitude
+    static constexpr uint32_t CAL_SETTLE = 2048; // samples to ignore (path warm-up)
+    static constexpr uint32_t CAL_WIN    = 8192; // correlation window
+
+    void runProcess(audio_block_t* in, audio_block_t* out) {
+        const uint32_t now = ARM_DWT_CYCCNT;
+        noInterrupts();
+        const uint32_t ls = lastSparkCyc;
+        const uint32_t rp = revPeriodCyc;
+        const bool valid  = tachValid;
+        interrupts();
+        if (valid && rp > 0) {
+            const double theta0 = kTwoPi * (double)(uint32_t)(now - ls) / (double)rp;
+            const double f0     = (double)F_CPU_ACTUAL / (double)rp;
+            eoc.setFrequency(f0);
+            eoc.syncPhase(theta0);
+        }
+        for (int i = 0; i < AUDIO_BLOCK_SAMPLES; ++i) {
+            const float e = (float)in->data[i] * (1.0f / 32768.0f);
+            float y = eoc.process(e);
+            if (y >  0.98f) y =  0.98f;
+            if (y < -0.98f) y = -0.98f;
+            out->data[i] = (int16_t)(y * 32767.0f);
+        }
+    }
+
+    void calProcess(audio_block_t* in, audio_block_t* out) {
+        for (int i = 0; i < AUDIO_BLOCK_SAMPLES; ++i) {
+            const double c = cos(calPhase), sn = sin(calPhase);
+            out->data[i] = (int16_t)(CAL_AMP * c * 32767.0);   // emit probe
+            if (calCount >= CAL_SETTLE) {
+                const double mic = (double)in->data[i] * (1.0 / 32768.0);
+                calI += mic * c;
+                calQ += mic * sn;
+            }
+            calPhase += calOmega;
+            if (calPhase > kTwoPi) calPhase -= kTwoPi;
+            if (++calCount >= CAL_SETTLE + CAL_WIN) { finishOrder(); break; }
+        }
+    }
+
+    void startOrder() {
+        calI = calQ = 0.0;
+        calCount = 0;
+        calPhase = 0.0;
+        calOmega = kTwoPi * (double)calOrder * calF0 / AUDIO_SAMPLE_RATE_EXACT;
+    }
+
+    void finishOrder() {
+        const double mag = 2.0 / (double)CAL_WIN * sqrt(calI * calI + calQ * calQ);
+        const double ph  = atan2(-calQ, calI);          // mic = mag*cos(theta + ph)
+        eoc.setSecondaryPath(calOrder, mag, ph);
+        Serial.print("  S_hat order "); Serial.print(calOrder);
+        Serial.print(": mag="); Serial.print(mag, 4);
+        Serial.print("  phase="); Serial.print(ph, 3); Serial.println(" rad");
+        if (++calOrder > NUM_ORDERS) {
+            calMode = false;
+            eoc.reset();                                 // clear weights before live run
+            Serial.println("calibration done -> RUN");
+        } else {
+            startOrder();
+        }
+    }
+
+    volatile bool calMode = false;
+    int calOrder = 1;
+    double calF0 = 50.0, calOmega = 0.0, calPhase = 0.0, calI = 0.0, calQ = 0.0;
+    uint32_t calCount = 0;
+
     audio_block_t* inputQueueArray[1];
 };
 volatile uint32_t AudioEOC::lastSparkCyc = 0;
@@ -138,10 +205,16 @@ void setup() {
     pinMode(TACH_PIN, INPUT);
     attachInterrupt(digitalPinToInterrupt(TACH_PIN), tachISR, RISING);
 
-    Serial.println("generator-anc: engine-order ANC running. Calibrate S_hat for real cancellation.");
+    Serial.println("generator-anc ready. Send 'c' (engine OFF) to calibrate S_hat, then run.");
 }
 
 void loop() {
+    if (Serial.available()) {
+        const char ch = Serial.read();
+        if (ch == 'c') eocNode.startCalibration(NOMINAL_CAL_RPM / 60.0);
+    }
+    if (eocNode.calibrating()) return;   // calibration prints its own progress
+
     static uint32_t t = 0;
     if (millis() - t >= 500) {
         t = millis();

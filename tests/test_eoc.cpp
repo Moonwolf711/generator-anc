@@ -132,4 +132,46 @@ TEST(sync_phase_reseats_oscillator) {
     CHECK_NEAR(c.referenceCos(2), 1.0, 1e-9);  // order 2 advances 2*pi -> back to 1
 }
 
+TEST(secondary_path_calibration_recovers_response) {
+    // The firmware's engine-off calibration in miniature: emit a unit cosine through a
+    // KNOWN secondary path (FIR), correlate the "mic" with quadrature references, and
+    // recover the path's magnitude + phase at that frequency. Must match the FIR's true
+    // response -- this is the exact math the Teensy CAL mode uses to fill setSecondaryPath().
+    const double fs = 8000.0, f = 180.0;
+    const double pi = 3.14159265358979323846;
+    const int M = 48;
+    std::vector<double> S(static_cast<std::size_t>(M), 0.0);
+    double s = 0.0;
+    for (int k = 0; k < M; ++k) {
+        S[static_cast<std::size_t>(k)] = (k >= 3) ? std::exp(-(k - 3) / (0.002 * fs)) : 0.0;
+        s += std::fabs(S[static_cast<std::size_t>(k)]);
+    }
+    for (auto& v : S) v /= s;
+
+    const double w = 2.0 * pi * f / fs;
+    double re = 0.0, im = 0.0;
+    for (int k = 0; k < M; ++k) { re += S[(std::size_t)k] * std::cos(w * k); im -= S[(std::size_t)k] * std::sin(w * k); }
+    const double trueMag = std::hypot(re, im), truePh = std::atan2(im, re);
+
+    const int N = 4000;
+    std::vector<double> hist(static_cast<std::size_t>(M), 0.0);
+    double I = 0.0, Q = 0.0;
+    for (int n = 0; n < N; ++n) {
+        const double drive = std::cos(w * n);
+        for (int k = M - 1; k > 0; --k) hist[(std::size_t)k] = hist[(std::size_t)(k - 1)];
+        hist[0] = drive;
+        double mic = 0.0;
+        for (int k = 0; k < M; ++k) mic += S[(std::size_t)k] * hist[(std::size_t)k];
+        if (n >= M) { I += mic * std::cos(w * n); Q += mic * std::sin(w * n); }  // skip startup
+    }
+    const double Nc = static_cast<double>(N - M);
+    const double mag = 2.0 / Nc * std::hypot(I, Q);
+    double ph = std::atan2(-Q, I);
+    double dph = ph - truePh;
+    while (dph > pi) dph -= 2.0 * pi;
+    while (dph < -pi) dph += 2.0 * pi;
+    CHECK_NEAR(mag, trueMag, 0.02 * trueMag + 1e-3);
+    CHECK_NEAR(dph, 0.0, 0.05);
+}
+
 int main() { return minitest::run(); }
