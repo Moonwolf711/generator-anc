@@ -38,6 +38,10 @@ static constexpr double LEAK        = 1e-6;    // weight leakage
 static constexpr double RPM_MIN     = 1200.0;  // -> 20 Hz rev
 static constexpr double RPM_MAX     = 4200.0;  // -> 70 Hz rev
 static constexpr double NOMINAL_CAL_RPM = 3000.0;  // engine-off S_hat cal point (mid-range)
+// ESP-12E telemetry link (BurgessWorld Arduino-Teensy4 carrier: ESP on Serial1 / TXD1-RXD1 pins).
+// If your link is Serial2 (pins 7/8), change TELEM to Serial2. Watch the TXD1/RXD1 LEDs blink to confirm.
+#define TELEM Serial1
+static constexpr long TELEM_BAUD = 115200;
 
 // ----------------------- audio graph -----------------------
 #if USE_AUDIO_SHIELD
@@ -231,6 +235,7 @@ void setup() {
     pinMode(TACH_PIN, INPUT);
     attachInterrupt(digitalPinToInterrupt(TACH_PIN), tachISR, RISING);
 
+    TELEM.begin(TELEM_BAUD);  // ESP-12E telemetry link
     Serial.println("generator-anc ready. Send 'c' (engine OFF) to calibrate S_hat, then run.");
 }
 
@@ -257,5 +262,16 @@ void loop() {
         Serial.print(AudioProcessorUsage(), 1);
         Serial.print("%  tach=");
         Serial.println(AudioEOC::tachValid ? "lock" : "--");
+
+        // compact CSV to the ESP-12E:  ANC,f0,rpm,o1..oN,cpu,lock
+        TELEM.print("ANC,");
+        TELEM.print(eocNode.eoc.frequency(), 1);
+        TELEM.print(',');
+        TELEM.print(eocNode.eoc.frequency() * 60.0, 0);
+        for (int h = 1; h <= NUM_ORDERS; ++h) { TELEM.print(','); TELEM.print(eocNode.eoc.orderAmplitude(h), 3); }
+        TELEM.print(',');
+        TELEM.print(AudioProcessorUsage(), 1);
+        TELEM.print(',');
+        TELEM.println(AudioEOC::tachValid ? 1 : 0);
     }
 }
