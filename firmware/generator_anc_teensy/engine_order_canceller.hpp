@@ -43,6 +43,7 @@ public:
           H_(numOrders),
           mu_(mu),
           leak_(leak),
+          active_(numOrders),
           wc_(static_cast<std::size_t>(numOrders), 0.0),
           ws_(static_cast<std::size_t>(numOrders), 0.0),
           cos_(static_cast<std::size_t>(numOrders), 1.0),
@@ -75,13 +76,29 @@ public:
         sSin_[i] = std::sin(phaseRad);
     }
 
+    // --- runtime tuning (e.g. from the phone cockpit, forwarded via the ESP link) ---
+    void setMu(double mu) { mu_ = mu; }                       // adaptation step
+    void setOutputGain(double g) { outGain_ = g; }            // master anti-noise scale (0..1 ramp)
+    void setActiveOrders(int n) {                             // cancel only orders 1..n
+        if (n < 1) n = 1;
+        if (n > H_) n = H_;
+        for (int h = n; h < active_; ++h) {                  // zero+freeze the dropped orders
+            wc_[static_cast<std::size_t>(h)] = 0.0;
+            ws_[static_cast<std::size_t>(h)] = 0.0;
+        }
+        active_ = n;
+    }
+    double mu() const { return mu_; }
+    double outputGain() const { return outGain_; }
+    int activeOrders() const { return active_; }
+
     // Process one sample. `errorSample` is the latest error-mic reading; returns the
     // anti-noise sample to emit. Hot path: no trig, no allocation.
     float process(float errorSample) {
         const double e = static_cast<double>(errorSample);
         double y = 0.0;
 
-        for (int h = 0; h < H_; ++h) {
+        for (int h = 0; h < active_; ++h) {
             const std::size_t i = static_cast<std::size_t>(h);
             const double c = cos_[i];
             const double s = sin_[i];
@@ -121,7 +138,7 @@ public:
                 }
             }
         }
-        return static_cast<float>(y);
+        return static_cast<float>(y * outGain_);
     }
 
     // Zero the adaptive weights and reset phasors (keeps fs/mu/secondary path).
@@ -173,6 +190,8 @@ private:
     int H_;
     double mu_;
     double leak_;
+    int active_;             // orders currently adapted/output (<= H_)
+    double outGain_ = 1.0;   // master anti-noise output scale
     double f0_ = 0.0;
     int renormCtr_ = 0;
 

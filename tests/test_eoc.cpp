@@ -174,4 +174,33 @@ TEST(secondary_path_calibration_recovers_response) {
     CHECK_NEAR(dph, 0.0, 0.05);
 }
 
+TEST(runtime_setters_behave) {
+    const double pi = 3.14159265358979323846;
+    const double fs = 8000.0, f0 = 120.0;
+    eoc::EngineOrderCanceller c(fs, 4, 0.05);
+    c.setFrequency(f0);
+    for (int h = 1; h <= 4; ++h) c.setSecondaryPath(h, 1.0, 0.0);
+    for (int n = 0; n < 3000; ++n) {
+        const double t = n / fs;
+        c.process(static_cast<float>(std::cos(2*pi*f0*t) + 0.6*std::cos(2*pi*3*f0*t)));
+    }
+    CHECK(c.orderAmplitude(1) > 1e-3);
+    CHECK(c.orderAmplitude(3) > 1e-3);
+
+    c.setActiveOrders(2);                 // cancel only orders 1..2
+    CHECK(c.activeOrders() == 2);
+    CHECK_NEAR(c.orderAmplitude(3), 0.0, 1e-12);   // dropped orders zeroed
+    CHECK_NEAR(c.orderAmplitude(4), 0.0, 1e-12);
+    for (int n = 0; n < 1000; ++n) c.process(0.5f);
+    CHECK_NEAR(c.orderAmplitude(3), 0.0, 1e-12);   // and never re-adapt while inactive
+
+    c.setOutputGain(0.0);                 // muted output
+    bool allZero = true;
+    for (int n = 0; n < 200; ++n) if (std::fabs(c.process(0.5f)) > 1e-12) allZero = false;
+    CHECK(allZero);
+
+    c.setMu(0.02);
+    CHECK_NEAR(c.mu(), 0.02, 1e-12);
+}
+
 int main() { return minitest::run(); }
