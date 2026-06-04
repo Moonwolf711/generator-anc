@@ -23,6 +23,12 @@
 #include <SPI.h>
 #include "engine_order_canceller.hpp"
 
+// Audio front-end:
+//   0 = NO SHIELD: Teensy MQS output (pins 10 & 12 -> RC low-pass -> amp) + analog ADC mic in (A2).
+//       For sub-bass anti-noise (30-360 Hz) MQS is plenty; its noise is ultrasonic (amp/sub filter it).
+//   1 = PJRC Audio Adaptor Rev D (SGTL5000): clean line-in mic + line-out.
+#define USE_AUDIO_SHIELD 0
+
 // ----------------------- config -----------------------
 static constexpr int   TACH_PIN    = 2;        // conditioned spark pulse (0/3.3V), once per revolution
 static constexpr int   NUM_ORDERS  = 6;        // single-cylinder: orders 1..6 carry the tonal energy
@@ -34,9 +40,14 @@ static constexpr double RPM_MAX     = 4200.0;  // -> 70 Hz rev
 static constexpr double NOMINAL_CAL_RPM = 3000.0;  // engine-off S_hat cal point (mid-range)
 
 // ----------------------- audio graph -----------------------
+#if USE_AUDIO_SHIELD
 AudioInputI2S        i2sIn;
 AudioOutputI2S       i2sOut;
 AudioControlSGTL5000 codec;
+#else
+AudioInputAnalog     adcIn(A2);   // error mic -> preamp -> bias ~1.65V -> pin A2 (pin 16)
+AudioOutputMQS       mqsOut;       // anti-noise on pins 10 & 12 -> RC low-pass -> amp RCA
+#endif
 
 // custom EOC node: in0 = error mic, out0 = anti-noise
 class AudioEOC : public AudioStream {
@@ -92,12 +103,19 @@ private:
         const uint32_t rp = revPeriodCyc;
         const bool valid  = tachValid;
         interrupts();
-        if (valid && rp > 0) {
-            const double theta0 = kTwoPi * (double)(uint32_t)(now - ls) / (double)rp;
-            const double f0     = (double)F_CPU_ACTUAL / (double)rp;
-            eoc.setFrequency(f0);
-            eoc.syncPhase(theta0);
+
+        // No engine sync (no tach, or stale = engine stopped): emit silence, do NOT adapt.
+        // Without a phase reference there is nothing to cancel; adapting would wind up on noise.
+        const uint32_t staleCyc = (uint32_t)(2.0 * (double)F_CPU_ACTUAL / (RPM_MIN / 60.0));
+        if (!valid || rp == 0 || (uint32_t)(now - ls) > staleCyc) {
+            for (int i = 0; i < AUDIO_BLOCK_SAMPLES; ++i) out->data[i] = 0;
+            return;
         }
+
+        const double theta0 = kTwoPi * (double)(uint32_t)(now - ls) / (double)rp;
+        const double f0     = (double)F_CPU_ACTUAL / (double)rp;
+        eoc.setFrequency(f0);
+        eoc.syncPhase(theta0);
         for (int i = 0; i < AUDIO_BLOCK_SAMPLES; ++i) {
             const float e = (float)in->data[i] * (1.0f / 32768.0f);
             float y = eoc.process(e);
@@ -157,9 +175,15 @@ volatile uint32_t AudioEOC::revPeriodCyc = 0;
 volatile bool     AudioEOC::tachValid    = false;
 
 AudioEOC eocNode;
+#if USE_AUDIO_SHIELD
 AudioConnection patchIn(i2sIn, 0, eocNode, 0);
 AudioConnection patchOut(eocNode, 0, i2sOut, 0);
 AudioConnection patchMon(eocNode, 0, i2sOut, 1);  // same anti-noise to both outputs
+#else
+AudioConnection patchIn(adcIn, 0, eocNode, 0);
+AudioConnection patchOutL(eocNode, 0, mqsOut, 0); // pin 12
+AudioConnection patchOutR(eocNode, 0, mqsOut, 1); // pin 10
+#endif
 
 // ----------------------- tach ISR -----------------------
 static uint32_t kMinPeriodCyc;  // RPM_MAX -> shortest period
@@ -187,10 +211,12 @@ void setup() {
     kMinPeriodCyc = (uint32_t)((double)F_CPU_ACTUAL / revHzMax);
 
     AudioMemory(24);
+#if USE_AUDIO_SHIELD
     codec.enable();
     codec.inputSelect(AUDIO_INPUT_LINEIN);   // error mic on LINEIN (use AUDIO_INPUT_MIC for a bare mic)
     codec.volume(0.6);
     codec.lineInLevel(5);
+#endif
 
     // Secondary-path estimate S_hat per order: magnitude + phase of speaker->mic at h*f0.
     // PLACEHOLDER -- you MUST calibrate this for your geometry, e.g.:

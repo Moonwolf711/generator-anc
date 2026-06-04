@@ -48,6 +48,26 @@ IMP 2 DI with GROUND LIFT on the line-level run to the amp -> kills the genset's
 3. Board: Teensy 4.0/4.1, USB Type: Serial, CPU 600 MHz. Upload.
 4. Open Serial Monitor (115200) — you'll see `f0`, RPM, per-order amplitudes, CPU%, and tach lock.
 
+## No Audio Shield? (Teensy MQS + ADC) — `#define USE_AUDIO_SHIELD 0`
+
+Teensy 4.0 has no DAC, but it can output audio via **MQS** (PWM) and read the mic via **ADC** — no
+shield needed. For sub-bass anti-noise (30–360 Hz) MQS is plenty; its quantization noise is ultrasonic
+and the amp + sub filter it out. Set `USE_AUDIO_SHIELD 0` (the default) and wire:
+
+```
+ANTI-NOISE OUT  Teensy pin 12 ──[1 kΩ]──┬──[1 µF]── amp RCA tip      (simple RC reconstruction filter)
+                                        └──[10 nF]── GND
+                Teensy GND ───────────────────────── amp RCA sleeve
+MIC IN          electret mic ─ preamp (e.g. MAX9814, output ~1.25 V bias) ── Teensy A2 (pin 16)
+```
+
+- The mic **must** be biased into 0–3.3 V (a MAX9814 electret module does this for you). Never exceed 3.3 V on the pin.
+- MQS lives on pins 10 & 12; use pin 12 (one channel) for a mono sub.
+- Switch to `USE_AUDIO_SHIELD 1` later if you get the Rev D adaptor for cleaner I/O.
+
+The controller **stays silent and does not adapt until it sees a valid tach** (engine sync). With no tach
+the serial shows `orders[0.000…]` and `tach=--` — that's correct idle, not a fault.
+
 ## Calibration (REQUIRED for actual cancellation)
 
 The controller needs the **secondary path** `Ŝ` — the speaker→error-mic magnitude and phase at each
