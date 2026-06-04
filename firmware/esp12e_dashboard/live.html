@@ -35,6 +35,15 @@ border:1px solid var(--line);background:var(--card);color:var(--txt);cursor:poin
 input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:3px;background:#16273a;outline:none}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--cyan);border:2px solid var(--bg)}
 input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--cyan);border:2px solid var(--bg)}
+.srow{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.spill{font-family:var(--mono);font-size:11px;font-weight:700;padding:4px 11px;border-radius:999px;border:1px solid}
+.s-ok{color:var(--teal);border-color:#1c5e44;background:#0a1f17}
+.s-fail{color:var(--org);border-color:#5e3318;background:#1f120a}
+.s-none{color:var(--mut);border-color:var(--line);background:#0d1a27}
+.sbars{display:flex;gap:8px;align-items:flex-end;height:84px;margin-top:14px}
+.sbar{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:5px}
+.sbar-fill{width:72%;background:linear-gradient(180deg,#ffb703,#fb5607);border-radius:3px 3px 0 0;min-height:2px;transition:height .3s}
+.sbar-lab{font-family:var(--mono);font-size:9px;color:var(--mut)}
 .foot{font-family:var(--mono);font-size:11px;color:#3a4d61;margin-top:18px;text-align:center}
 </style></head><body><div class="wrap">
 
@@ -50,6 +59,11 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
 
 <div class="card"><div class="lbl">ANTI-NOISE EFFORT · per engine order</div>
   <canvas id="comb"></canvas></div>
+
+<div class="card">
+  <div class="srow"><span class="lbl" style="margin:0">&Scaron;&#770; · SECONDARY PATH</span><span class="spill s-none" id="sStatus">not calibrated</span></div>
+  <div class="sbars" id="sbars"></div>
+</div>
 
 <div class="card">
   <div class="lbl">CONTROL</div>
@@ -96,14 +110,27 @@ function apply(d){
   f0=d.f0||30.5; ord=d.ord||ord; ND=d.orders||ND;
   var lk=document.getElementById('lock');
   lk.textContent=d.lock?'TACH LOCK':'NO TACH';lk.className='pill '+(d.lock?'lock-on':'lock-off');
-  document.getElementById('mode').textContent=d.mode||'idle';
+  var mp=document.getElementById('mode'); mp.textContent=d.mode||'idle';
+  mp.className='pill '+(d.mode==='S-FAIL'?'lock-off':d.mode==='running'?'lock-on':'mode');
   document.getElementById('stale').style.display=(d.age>2)?'inline-block':'none';
   document.getElementById('stale').textContent='stale '+(d.age||0).toFixed(0)+'s';
   // reflect Teensy state on controls the user is NOT currently dragging
   if(!drag.orders&&d.orders){var s=document.getElementById('sOrd');s.value=d.orders;document.getElementById('vOrd').textContent=d.orders;}
   if(!drag.mu&&d.mu!=null){var s=document.getElementById('sMu');s.value=d.mu;document.getElementById('vMu').textContent=(+d.mu).toFixed(3);}
   if(!drag.gain&&d.gain!=null){var s=document.getElementById('sGain');s.value=d.gain;document.getElementById('vGain').textContent=Math.round(d.gain*100)+'%';}
+  renderS(d);
   draw();
+}
+
+function renderS(d){
+  var s=d.smag||[], st=document.getElementById('sStatus');
+  if(d.mode==='S-FAIL'){st.textContent='FAIL — probe not heard';st.className='spill s-fail';}
+  else if(d.cal){st.textContent='calibrated ✓';st.className='spill s-ok';}
+  else{st.textContent='not calibrated';st.className='spill s-none';}
+  var mx=Math.max(0.001,...s), h='';
+  for(var i=0;i<ND;i++){var pct=Math.round(100*(s[i]||0)/mx);
+    h+='<div class=sbar><div class=sbar-fill style=height:'+pct+'%></div><span class=sbar-lab>o'+(i+1)+'</span></div>';}
+  document.getElementById('sbars').innerHTML=h;
 }
 
 var tmr={};

@@ -85,6 +85,7 @@ public:
         calMode = true;
         calMaxMag = 0.0;
         calFailedFlag_ = false;
+        calDoneFlag_ = false;
         Serial.print("calibrating S_hat at nominal f0=");
         Serial.print(f0nom, 1);
         Serial.println(" Hz -- engine OFF, speaker+mic in final position");
@@ -93,6 +94,7 @@ public:
 
     bool calibrating() const { return calMode; }
     bool calFailed() const { return calFailedFlag_; }   // true if the last cal never heard the probe
+    bool calDone() const { return calDoneFlag_; }        // true after a successful S_hat calibration
 
     void update(void) override {
         audio_block_t* in = receiveReadOnly(0);
@@ -190,6 +192,7 @@ private:
                 eoc.setOutputGain(0.0);                  // stay muted until a good cal
                 Serial.println("** S_hat FAIL: probe not heard. Check amp gain, speaker, and error-mic wiring, then re-run 'c'. **");
             } else {
+                calDoneFlag_ = true;
                 Serial.println("calibration done -> RUN");
             }
         } else {
@@ -199,6 +202,7 @@ private:
 
     volatile bool calMode = false;
     bool calFailedFlag_ = false;
+    bool calDoneFlag_ = false;
     int calOrder = 1;
     double calF0 = 50.0, calOmega = 0.0, calPhase = 0.0, calI = 0.0, calQ = 0.0;
     double calMaxMag = 0.0;
@@ -336,7 +340,7 @@ void loop() {
         Serial.print("%  tach="); Serial.println(AudioEOC::tachValid ? "lock" : "--");
     }
 
-    // CSV to the ESP-12E:  ANC,f0,rpm,o1..oN,cpu,lock,mu,orders,gain,mode
+    // CSV to the ESP-12E:  ANC,f0,rpm,o1..oN,cpu,lock,mu,orders,gain,mode,cal,s1..sN
     TELEM.print("ANC,");
     TELEM.print(eocNode.eoc.frequency(), 1);
     TELEM.print(','); TELEM.print(eocNode.eoc.frequency() * 60.0, 0);
@@ -346,5 +350,8 @@ void loop() {
     TELEM.print(','); TELEM.print(eocNode.eoc.mu(), 4);
     TELEM.print(','); TELEM.print(eocNode.eoc.activeOrders());
     TELEM.print(','); TELEM.print(eocNode.eoc.outputGain(), 2);
-    TELEM.print(','); TELEM.println(modeCode());
+    TELEM.print(','); TELEM.print(modeCode());
+    TELEM.print(','); TELEM.print(eocNode.calDone() ? 1 : 0);                    // S_hat calibrated?
+    for (int h = 1; h <= NUM_ORDERS; ++h) { TELEM.print(','); TELEM.print(eocNode.eoc.secondaryMag(h), 3); }
+    TELEM.println();
 }

@@ -181,6 +181,14 @@ public:
     int numOrders() const { return H_; }
     double frequency() const { return f0_; }
 
+    // Calibrated secondary-path magnitude |S| at engine `order` (1-based) -- for the
+    // cockpit to display what the S_hat calibration measured.
+    double secondaryMag(int order) const {
+        const std::size_t i = static_cast<std::size_t>(order - 1);
+        if (i >= static_cast<std::size_t>(H_)) return 0.0;
+        return sMag_[i];
+    }
+
 private:
     static constexpr double kPi = 3.14159265358979323846;
     static constexpr double kEps = 1e-12;

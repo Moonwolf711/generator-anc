@@ -24,7 +24,8 @@ ESP8266WebServer server(80);
 
 float    g_f0 = 0, g_rpm = 0, g_cpu = 0, g_mu = 0, g_gain = 0;
 float    g_ord[6] = {0,0,0,0,0,0};
-int      g_lock = 0, g_orders = 6, g_mode = 0;
+float    g_smag[6] = {0,0,0,0,0,0};
+int      g_lock = 0, g_orders = 6, g_mode = 0, g_cal = 0;
 uint32_t g_last = 0;
 char     buf[200];
 int      buflen = 0;
@@ -40,11 +41,11 @@ const char* modeStr(int m) {
 }
 
 void parseLine(const char* s) {
-    // ANC,f0,rpm,o1..o6,cpu,lock[,mu,orders,gain,mode]
+    // ANC,f0,rpm,o1..o6,cpu,lock[,mu,orders,gain,mode,cal,s1..s6]
     if (strncmp(s, "ANC,", 4) != 0) return;
-    float v[14]; int n = 0;
+    float v[21]; int n = 0;
     const char* p = s + 4;
-    while (n < 14 && *p) {
+    while (n < 21 && *p) {
         v[n++] = atof(p);
         const char* c = strchr(p, ',');
         if (!c) break;
@@ -55,6 +56,7 @@ void parseLine(const char* s) {
         for (int i = 0; i < 6; ++i) g_ord[i] = v[2 + i];
         g_cpu = v[8]; g_lock = (int)v[9];
         if (n >= 14) { g_mu = v[10]; g_orders = (int)v[11]; g_gain = v[12]; g_mode = (int)v[13]; }
+        if (n >= 21) { g_cal = (int)v[14]; for (int i = 0; i < 6; ++i) g_smag[i] = v[15 + i]; }
         g_last = millis();
     }
 }
@@ -64,8 +66,11 @@ String dataJson() {
                ",\"cpu\":" + String(g_cpu,1) + ",\"lock\":" + String(g_lock) +
                ",\"age\":" + String((millis()-g_last)/1000.0,1) +
                ",\"mu\":" + String(g_mu,4) + ",\"orders\":" + String(g_orders) +
-               ",\"gain\":" + String(g_gain,2) + ",\"mode\":\"" + modeStr(g_mode) + "\",\"ord\":[";
+               ",\"gain\":" + String(g_gain,2) + ",\"mode\":\"" + modeStr(g_mode) +
+               "\",\"cal\":" + String(g_cal) + ",\"ord\":[";
     for (int i = 0; i < 6; ++i) { j += String(g_ord[i],3); if (i < 5) j += ","; }
+    j += "],\"smag\":[";
+    for (int i = 0; i < 6; ++i) { j += String(g_smag[i],3); if (i < 5) j += ","; }
     j += "]}";
     return j;
 }

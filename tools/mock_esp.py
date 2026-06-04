@@ -15,7 +15,8 @@ PORT = 8771
 HTML = os.path.join(os.path.dirname(__file__), "..", "firmware", "esp12e_dashboard", "live.html")
 T0 = None  # set on first request (avoid time at import)
 
-S = {"mu": 0.05, "orders": 6, "gain": 1.0, "mode": "idle", "cal_t": 0.0}
+S = {"mu": 0.05, "orders": 6, "gain": 1.0, "mode": "idle", "cal_t": 0.0, "cal": 0}
+SMAG_CAL = [0.42, 0.38, 0.55, 0.30, 0.22, 0.18]   # plausible per-order |S| once calibrated
 
 def telemetry(now):
     t = now - T0
@@ -31,11 +32,13 @@ def telemetry(now):
         e = (base[i] * S["gain"] * (0.6 + 0.4 * math.sin(t * 0.8 + i))) if on else 0.0
         ordv.append(round(max(0, e), 3))
     if S["mode"] == "calibrating" and (now - S["cal_t"]) > 3.0:
-        S["mode"] = "calibrated"
+        S["mode"] = "stopped"; S["cal"] = 1
     cpu = 34 + (12 if running else 0) + 3 * math.sin(t * 2)
+    smag = SMAG_CAL if S["cal"] else [1.0] * 6
     return {"f0": round(f0, 1), "rpm": round(rpm), "cpu": round(cpu, 1),
             "lock": 1 if lock else 0, "age": 0.0, "ord": ordv,
-            "mu": S["mu"], "orders": S["orders"], "gain": S["gain"], "mode": S["mode"]}
+            "mu": S["mu"], "orders": S["orders"], "gain": S["gain"], "mode": S["mode"],
+            "cal": S["cal"], "smag": smag}
 
 class H(BaseHTTPRequestHandler):
     def _send(self, code, ctype, body):
@@ -60,7 +63,7 @@ class H(BaseHTTPRequestHandler):
             self._send(200, "text/plain", b"ok"); return
         if u.path == "/cmd":
             c = q.get("c", [""])[0]
-            if c == "c": S["mode"] = "calibrating"; S["cal_t"] = now
+            if c == "c": S["mode"] = "calibrating"; S["cal_t"] = now; S["cal"] = 0
             elif c == "r": S["mode"] = "running"
             elif c == "s": S["mode"] = "calibrated" if S["mode"] != "idle" else "idle"
             print(f"[cmd] {c}  -> would send '{c}' to Teensy   (mode now {S['mode']})")
