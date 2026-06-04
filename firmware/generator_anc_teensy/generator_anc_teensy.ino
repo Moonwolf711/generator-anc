@@ -29,6 +29,12 @@
 //   1 = PJRC Audio Adaptor Rev D (SGTL5000): clean line-in mic + line-out.
 #define USE_AUDIO_SHIELD 0
 
+// MAX98357A I2S DAC+amp on the OUTPUT (you have this board). Clean I2S audio out ->
+// MAX98357A -> a small 4-8 ohm speaker (3W, near-field ANC / bench test). Mic still ADC on A2.
+// Set 0 to fall back to MQS output (pins 10/12 -> RC -> Alpine -> 12in sub) for big SPL.
+// Wiring: BCLK->Teensy 21, LRC->20, DIN->7, Vin->5V, GND->GND, SD+GAIN floating (default).
+#define USE_MAX98357 1
+
 // ----------------------- config -----------------------
 static constexpr int   TACH_PIN    = 2;        // conditioned spark pulse (0/3.3V), once per revolution
 static constexpr int   NUM_ORDERS  = 6;        // single-cylinder: orders 1..6 carry the tonal energy
@@ -48,6 +54,9 @@ static constexpr long TELEM_BAUD = 115200;
 AudioInputI2S        i2sIn;
 AudioOutputI2S       i2sOut;
 AudioControlSGTL5000 codec;
+#elif USE_MAX98357
+AudioInputAnalog     adcIn(A2);   // error mic -> preamp -> bias ~1.65V -> pin A2 (pin 16)
+AudioOutputI2S       i2sOut;       // -> MAX98357A: BCLK->21, LRC->20, DIN->7 -> small 4-8ohm speaker
 #else
 AudioInputAnalog     adcIn(A2);   // error mic -> preamp -> bias ~1.65V -> pin A2 (pin 16)
 AudioOutputMQS       mqsOut;       // anti-noise on pins 10 & 12 -> RC low-pass -> amp RCA
@@ -183,6 +192,10 @@ AudioEOC eocNode;
 AudioConnection patchIn(i2sIn, 0, eocNode, 0);
 AudioConnection patchOut(eocNode, 0, i2sOut, 0);
 AudioConnection patchMon(eocNode, 0, i2sOut, 1);  // same anti-noise to both outputs
+#elif USE_MAX98357
+AudioConnection patchIn(adcIn, 0, eocNode, 0);
+AudioConnection patchOutL(eocNode, 0, i2sOut, 0); // -> MAX98357A
+AudioConnection patchOutR(eocNode, 0, i2sOut, 1);
 #else
 AudioConnection patchIn(adcIn, 0, eocNode, 0);
 AudioConnection patchOutL(eocNode, 0, mqsOut, 0); // pin 12
