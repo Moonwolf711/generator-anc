@@ -257,39 +257,70 @@ void setup() {
     Serial.println("generator-anc ready. Send 'c' (engine OFF) to calibrate S_hat, then run.");
 }
 
-void loop() {
-    if (Serial.available()) {
-        const char ch = Serial.read();
-        if (ch == 'c') eocNode.startCalibration(NOMINAL_CAL_RPM / 60.0);
+// ---- command handling (from USB Serial OR the phone cockpit via the ESP/TELEM) ----
+// Accepts single chars  c r s ?  and  "SET <mu|orders|gain> <value>"  lines.
+static void applyCommand(const char* s) {
+    if (strncmp(s, "SET ", 4) == 0) {
+        const char* p = s + 4;
+        char name[12] = {0};
+        int i = 0; while (p[i] && p[i] != ' ' && i < 11) { name[i] = p[i]; ++i; }
+        const char* sp = strchr(p, ' ');
+        const double val = sp ? atof(sp + 1) : 0.0;
+        if      (strcmp(name, "mu")     == 0) eocNode.eoc.setMu(val);
+        else if (strcmp(name, "orders") == 0) eocNode.eoc.setActiveOrders((int)val);
+        else if (strcmp(name, "gain")   == 0) eocNode.eoc.setOutputGain(val);
+    } else if (s[0] == 'c') {
+        eocNode.startCalibration(NOMINAL_CAL_RPM / 60.0);  // engine OFF
+    } else if (s[0] == 'r') {
+        eocNode.eoc.setOutputGain(1.0);                    // run: unmute anti-noise
+    } else if (s[0] == 's') {
+        eocNode.eoc.setOutputGain(0.0);                    // stop: mute output, keep weights
     }
-    if (eocNode.calibrating()) return;   // calibration prints its own progress
+}
+
+// Line-buffered reader shared by the USB port and the ESP link.
+static void readPort(Stream& port, char* buf, int& len, int cap) {
+    while (port.available()) {
+        const char c = (char)port.read();
+        if (c == '\n' || len >= cap - 1) { buf[len] = 0; if (len) applyCommand(buf); len = 0; }
+        else if (c != '\r') buf[len++] = c;
+    }
+}
+
+// mode for telemetry: 0 idle(no tach) · 1 calibrating · 2 stopped/ready · 3 running
+static int modeCode() {
+    if (eocNode.calibrating())           return 1;
+    if (!AudioEOC::tachValid)            return 0;
+    if (eocNode.eoc.outputGain() <= 0.0) return 2;
+    return 3;
+}
+
+void loop() {
+    static char usbBuf[40]; static int usbLen = 0;
+    static char espBuf[40]; static int espLen = 0;
+    readPort(Serial, usbBuf, usbLen, (int)sizeof(usbBuf));
+    readPort(TELEM,  espBuf, espLen, (int)sizeof(espBuf));
 
     static uint32_t t = 0;
-    if (millis() - t >= 500) {
-        t = millis();
-        Serial.print("f0=");
-        Serial.print(eocNode.eoc.frequency(), 1);
-        Serial.print(" Hz  RPM=");
-        Serial.print(eocNode.eoc.frequency() * 60.0, 0);
-        Serial.print("  orders[");
-        for (int h = 1; h <= NUM_ORDERS; ++h) {
-            Serial.print(eocNode.eoc.orderAmplitude(h), 3);
-            if (h < NUM_ORDERS) Serial.print(' ');
-        }
-        Serial.print("]  cpu=");
-        Serial.print(AudioProcessorUsage(), 1);
-        Serial.print("%  tach=");
-        Serial.println(AudioEOC::tachValid ? "lock" : "--");
+    if (millis() - t < 500) return;
+    t = millis();
 
-        // compact CSV to the ESP-12E:  ANC,f0,rpm,o1..oN,cpu,lock
-        TELEM.print("ANC,");
-        TELEM.print(eocNode.eoc.frequency(), 1);
-        TELEM.print(',');
-        TELEM.print(eocNode.eoc.frequency() * 60.0, 0);
-        for (int h = 1; h <= NUM_ORDERS; ++h) { TELEM.print(','); TELEM.print(eocNode.eoc.orderAmplitude(h), 3); }
-        TELEM.print(',');
-        TELEM.print(AudioProcessorUsage(), 1);
-        TELEM.print(',');
-        TELEM.println(AudioEOC::tachValid ? 1 : 0);
+    if (!eocNode.calibrating()) {   // human-readable line on USB (calibration prints its own)
+        Serial.print("f0="); Serial.print(eocNode.eoc.frequency(), 1);
+        Serial.print(" Hz  RPM="); Serial.print(eocNode.eoc.frequency() * 60.0, 0);
+        Serial.print("  cpu="); Serial.print(AudioProcessorUsage(), 1);
+        Serial.print("%  tach="); Serial.println(AudioEOC::tachValid ? "lock" : "--");
     }
+
+    // CSV to the ESP-12E:  ANC,f0,rpm,o1..oN,cpu,lock,mu,orders,gain,mode
+    TELEM.print("ANC,");
+    TELEM.print(eocNode.eoc.frequency(), 1);
+    TELEM.print(','); TELEM.print(eocNode.eoc.frequency() * 60.0, 0);
+    for (int h = 1; h <= NUM_ORDERS; ++h) { TELEM.print(','); TELEM.print(eocNode.eoc.orderAmplitude(h), 3); }
+    TELEM.print(','); TELEM.print(AudioProcessorUsage(), 1);
+    TELEM.print(','); TELEM.print(AudioEOC::tachValid ? 1 : 0);
+    TELEM.print(','); TELEM.print(eocNode.eoc.mu(), 4);
+    TELEM.print(','); TELEM.print(eocNode.eoc.activeOrders());
+    TELEM.print(','); TELEM.print(eocNode.eoc.outputGain(), 2);
+    TELEM.print(','); TELEM.println(modeCode());
 }

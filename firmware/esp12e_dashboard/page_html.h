@@ -1,0 +1,127 @@
+// AUTO-GENERATED from live.html by tools/embed_page.py -- do not edit by hand.
+#ifndef PAGE_HTML_H
+#define PAGE_HTML_H
+const char PAGE[] PROGMEM = R"HTML(
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>generator-anc · live</title>
+<!-- SELF-CONTAINED: no CDN, no deps. Served by the ESP-12E over SoftAP (no internet).
+     Polls /data; sliders -> /set?p=&v= ; buttons -> /cmd?c= .
+     Source of truth: edit this file, then run tools/embed_page.py to regenerate page_html.h. -->
+<style>
+:root{color-scheme:dark;--bg:#0a131e;--pan:#0f1c29;--card:#0e1b28;--line:#1b2c3d;--txt:#c6d3e0;--mut:#5d7184;
+--teal:#2dd4a7;--cyan:#4cc9f0;--amb:#ffb703;--org:#fb5607;--mono:ui-monospace,"Cascadia Code",Consolas,monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);
+font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:680px;margin:0 auto;padding:16px 14px 40px}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.rpm{font-family:var(--mono);font-size:64px;font-weight:700;line-height:.9;color:var(--amb)}
+.rpm small{font-size:16px;color:var(--mut);font-weight:500;margin-left:6px}
+.sub{font-family:var(--mono);font-size:13px;color:var(--mut);margin-top:4px}
+.pills{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.pill{font-family:var(--mono);font-size:12px;font-weight:700;padding:6px 12px;border-radius:999px;border:1px solid}
+.lock-on{color:var(--teal);border-color:#1c5e44;background:#0a1f17}
+.lock-off{color:var(--org);border-color:#5e3318;background:#1f120a}
+.mode{color:var(--cyan);border-color:#234b66;background:#0c1d2a}
+.stale{color:var(--amb);border-color:#5e4318;background:#1c1408}
+.card{margin-top:16px;padding:16px;background:var(--pan);border:1px solid var(--line);border-radius:14px}
+.lbl{font-family:var(--mono);font-size:11px;color:var(--mut);letter-spacing:.5px;margin-bottom:8px}
+canvas{width:100%;height:170px;display:block}
+.cmds{display:flex;gap:10px;margin-top:14px}
+.btn{flex:1;font-family:var(--mono);font-weight:700;font-size:14px;padding:14px;border-radius:12px;
+border:1px solid var(--line);background:var(--card);color:var(--txt);cursor:pointer}
+.btn:active{transform:scale(.98)}
+.btn.cal{border-color:#5e4318;color:var(--amb)}.btn.run{border-color:#1c5e44;color:var(--teal)}.btn.stop{border-color:#5e3318;color:var(--org)}
+.ctl{margin-top:14px}.ctl .row{display:flex;justify-content:space-between;font-size:13px;color:var(--mut);margin-bottom:6px}
+.ctl .row b{font-family:var(--mono);color:var(--cyan)}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:3px;background:#16273a;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--cyan);border:2px solid var(--bg)}
+input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--cyan);border:2px solid var(--bg)}
+.foot{font-family:var(--mono);font-size:11px;color:#3a4d61;margin-top:18px;text-align:center}
+</style></head><body><div class="wrap">
+
+<div class="top">
+  <div><div class="rpm"><span id="rpm">--</span><small>RPM</small></div>
+  <div class="sub">f0 <span id="f0">--</span> Hz · cpu <span id="cpu">--</span>%</div></div>
+  <div class="pills">
+    <span class="pill mode" id="mode">idle</span>
+    <span class="pill lock-off" id="lock">NO TACH</span>
+    <span class="pill stale" id="stale" style="display:none">stale</span>
+  </div>
+</div>
+
+<div class="card"><div class="lbl">ANTI-NOISE EFFORT · per engine order</div>
+  <canvas id="comb"></canvas></div>
+
+<div class="card">
+  <div class="lbl">CONTROL</div>
+  <div class="cmds">
+    <button class="btn cal"  onclick="cmd('c')">Calibrate</button>
+    <button class="btn run"  onclick="cmd('r')">Run ANC</button>
+    <button class="btn stop" onclick="cmd('s')">Stop</button>
+  </div>
+  <div class="ctl"><div class="row"><span>Active orders</span><b id="vOrd">6</b></div>
+    <input type="range" id="sOrd" min="1" max="6" step="1" value="6" oninput="setp('orders',this.value,'vOrd',v=>v)"></div>
+  <div class="ctl"><div class="row"><span>Step size μ</span><b id="vMu">0.050</b></div>
+    <input type="range" id="sMu" min="0.005" max="0.06" step="0.005" value="0.05" oninput="setp('mu',this.value,'vMu',v=>(+v).toFixed(3))"></div>
+  <div class="ctl"><div class="row"><span>Output gain</span><b id="vGain">100%</b></div>
+    <input type="range" id="sGain" min="0" max="1" step="0.05" value="1" oninput="setp('gain',this.value,'vGain',v=>Math.round(v*100)+'%')"></div>
+</div>
+
+<div class="foot">generator-anc · ESP-12E SoftAP · connect &amp; tune at the bench</div>
+</div>
+
+<script>
+var cvs=document.getElementById('comb'),ctx=cvs.getContext('2d');
+var ND=6, ord=[0,0,0,0,0,0], f0=30.5, drag={};   // drag = sliders the user is touching (don't overwrite)
+
+function draw(){
+  var W=cvs.clientWidth,H=cvs.clientHeight,dpr=2;
+  if(cvs.width!=W*dpr){cvs.width=W*dpr;cvs.height=H*dpr;}
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
+  var padB=22,padT=8,n=ND,gap=10,bw=(W-gap*(n+1))/n,mx=Math.max(0.0001,...ord);
+  for(var i=0;i<n;i++){
+    var v=ord[i]/mx, x=gap+i*(bw+gap), bh=(H-padB-padT)*v, y=H-padB-bh;
+    var grad=ctx.createLinearGradient(0,y,0,H-padB);
+    grad.addColorStop(0,'#2dd4a7');grad.addColorStop(1,'#4cc9f0');
+    ctx.fillStyle=grad;ctx.fillRect(x,y,bw,bh);
+    ctx.fillStyle='#5d7184';ctx.font="10px ui-monospace,monospace";ctx.textAlign='center';
+    ctx.fillText('o'+(i+1),x+bw/2,H-9);
+    ctx.fillText(Math.round((i+1)*f0)+'Hz',x+bw/2,H-1);
+  }
+}
+
+function apply(d){
+  document.getElementById('rpm').textContent=Math.round(d.rpm);
+  document.getElementById('f0').textContent=(d.f0||0).toFixed(1);
+  document.getElementById('cpu').textContent=(d.cpu||0).toFixed(0);
+  f0=d.f0||30.5; ord=d.ord||ord; ND=d.orders||ND;
+  var lk=document.getElementById('lock');
+  lk.textContent=d.lock?'TACH LOCK':'NO TACH';lk.className='pill '+(d.lock?'lock-on':'lock-off');
+  document.getElementById('mode').textContent=d.mode||'idle';
+  document.getElementById('stale').style.display=(d.age>2)?'inline-block':'none';
+  document.getElementById('stale').textContent='stale '+(d.age||0).toFixed(0)+'s';
+  // reflect Teensy state on controls the user is NOT currently dragging
+  if(!drag.orders&&d.orders){var s=document.getElementById('sOrd');s.value=d.orders;document.getElementById('vOrd').textContent=d.orders;}
+  if(!drag.mu&&d.mu!=null){var s=document.getElementById('sMu');s.value=d.mu;document.getElementById('vMu').textContent=(+d.mu).toFixed(3);}
+  if(!drag.gain&&d.gain!=null){var s=document.getElementById('sGain');s.value=d.gain;document.getElementById('vGain').textContent=Math.round(d.gain*100)+'%';}
+  draw();
+}
+
+var tmr={};
+function setp(p,v,vid,fmt){
+  document.getElementById(vid).textContent=fmt(v);
+  drag[p]=1; clearTimeout(tmr[p]);
+  tmr[p]=setTimeout(function(){ drag[p]=0; },1200);   // release after the user stops
+  fetch('/set?p='+p+'&v='+encodeURIComponent(v)).catch(function(){});
+}
+function cmd(c){ fetch('/cmd?c='+c).catch(function(){}); }
+
+async function tick(){ try{ var r=await fetch('/data'); apply(await r.json()); }catch(e){} }
+setInterval(tick,350); tick(); window.addEventListener('resize',draw);
+</script></body></html>
+
+)HTML";
+#endif
