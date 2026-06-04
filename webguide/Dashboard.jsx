@@ -114,6 +114,7 @@ function Dashboard({ connections, onBack }) {
   const wired = A.WIRES.every((w) => connections[w.id]);
   const [mode, setMode] = useS("idle");        // idle | calibrating | calibrated | running
   const [engineOn, setEngineOn] = useS(false);
+  const [view, setView] = useS(window.GENSET ? "capture" : "sim");  // capture = real spectrum + tuner
   const [m, setM] = useS({ reduction: 0, residual: -46, conf: 0, gain: 0, mic: 0.2 });
   const [log, setLog] = useS([
     { k: "sys", t: "Teensy 4.0 · ANC firmware ready · fs=44.1kHz" },
@@ -209,8 +210,14 @@ function Dashboard({ connections, onBack }) {
           <span className="tgl-track"><span className="tgl-knob" /></span>
           <span className="tgl-text">Generator<br /><b>{engineOn ? "RUNNING" : "off"}</b></span>
         </label>
+        <div className="view-toggle">
+          <button className={"vt-btn" + (view === "capture" ? " active" : "")} onClick={() => setView("capture")}>Real capture</button>
+          <button className={"vt-btn" + (view === "sim" ? " active" : "")} onClick={() => setView("sim")}>Sim</button>
+        </div>
       </div>
 
+      {view === "capture" && <CaptureTuner />}
+      {view === "sim" && (<>
       {!wired && (
         <div className="warn-banner">Finish the 5 output wires first — the amp won't make sound until it's powered + clocked.</div>
       )}
@@ -252,6 +259,7 @@ function Dashboard({ connections, onBack }) {
           </div>
         </div>
       </div>
+      </>)}
     </div>
   );
 }
