@@ -7,6 +7,16 @@ harmonics — the dominant, periodic part of generator noise. The DSP core is he
 in steady state, and **trig-free in the per-sample hot loop** (phasor recurrence), so it drops onto a
 Teensy / STM32 / Pi as-is.
 
+## Build blueprint & demo
+
+Full no-shield wiring (Teensy MQS out + ADC mic in), every pin and part value:
+
+![wiring blueprint](docs/blueprint.png)
+
+Engine-order cancellation converging (synthetic, phase-coherent — what the tach makes real):
+
+![cancellation demo](docs/demo.gif)
+
 ## Why engine-order, not broadband ANC
 
 Generator noise is periodic: a firing fundamental `f0` (set by RPM) plus harmonics. With a tach you
