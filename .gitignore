@@ -4,3 +4,4 @@ outputs/
 *.obj
 *.exe
 .DS_Store
+captures/
