@@ -8,11 +8,11 @@ from the tach pickup -- the algorithm is identical, only the ref source
 differs. Engine-order ANC cancels TONES, not broadband hiss; this measures
 exactly how much of the captured noise is tonal/cancellable.
 """
-import sys, argparse
+import sys, argparse, os, tempfile, subprocess
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
-from scipy.signal import welch, find_peaks
+from scipy.signal import welch, find_peaks, resample_poly
 
 FS = 44100
 
@@ -21,6 +21,24 @@ def record(device, secs, ch=1):
     x = sd.rec(int(secs*FS), samplerate=FS, channels=ch, device=device, dtype='float32')
     sd.wait()
     return x[:,0]
+
+def load_file(path):
+    """Read any recording (iPhone .m4a, .mp3, .wav, .mov...) -> mono float32 @ FS.
+    Routes everything through ffmpeg for uniform decode + downmix + resample."""
+    print(f"[file] decoding {path} ...", flush=True)
+    tmp = tempfile.mktemp(suffix=".wav")
+    try:
+        subprocess.run(["ffmpeg","-v","error","-y","-i",path,
+                        "-ac","1","-ar",str(FS),tmp], check=True)
+        x,_ = sf.read(tmp); return x.astype('float32')
+    except FileNotFoundError:
+        # no ffmpeg: fall back to soundfile (wav/flac/ogg/mp3 only) + resample
+        x,sr = sf.read(path)
+        if x.ndim>1: x = x.mean(axis=1)
+        if sr != FS: x = resample_poly(x, FS, sr)
+        return x.astype('float32')
+    finally:
+        if os.path.exists(tmp): os.remove(tmp)
 
 def psd_db(x):
     f, p = welch(x, FS, nperseg=8192, noverlap=4096)
@@ -75,10 +93,11 @@ def main():
     ap.add_argument('--device', type=int, default=1)
     ap.add_argument('--secs', type=float, default=4.0)
     ap.add_argument('--label', default='cap')
+    ap.add_argument('--file', default=None, help='analyze an existing recording (iPhone .m4a, .wav, ...) instead of live capture')
     ap.add_argument('--cancel', action='store_true')
     a = ap.parse_args()
 
-    x = record(a.device, a.secs)
+    x = load_file(a.file) if a.file else record(a.device, a.secs)
     rms = float(np.sqrt(np.mean(x**2)))
     peak = float(np.max(np.abs(x)))
     wav = f"captures/{a.label}.wav"
@@ -115,12 +134,13 @@ def main():
             fb, pb = psd_db(x); fa, pa = psd_db(e)
             fig, ax = plt.subplots(figsize=(10, 4.6), dpi=120)
             fig.patch.set_facecolor("#0a131e"); ax.set_facecolor("#0e1b28")
-            ax.plot(fb, pb, color="#fb5607", lw=1.3, label="fan noise (mic)")
+            src = os.path.basename(a.file) if a.file else f"mic capture · device {a.device}"
+            ax.plot(fb, pb, color="#fb5607", lw=1.3, label="raw noise")
             ax.plot(fa, pa, color="#2dd4a7", lw=1.3, label="after engine-order ANC")
             for t in tones:
                 ax.axvline(t, color="#ffb703", ls=":", lw=0.8, alpha=0.6)
             ax.set_xlim(0, 800); ax.set_xlabel("frequency (Hz)"); ax.set_ylabel("PSD (dB)")
-            ax.set_title("Engine-order ANC on real fan noise (Yeti capture)", color="#e9eef4")
+            ax.set_title(f"Engine-order ANC — {a.label}  ({src})", color="#e9eef4")
             for s in ax.spines.values(): s.set_color("#233a50")
             ax.tick_params(colors="#9fb4c8"); ax.xaxis.label.set_color("#9fb4c8"); ax.yaxis.label.set_color("#9fb4c8")
             ax.grid(color="#16273a", lw=0.6)
