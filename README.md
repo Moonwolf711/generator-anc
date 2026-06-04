@@ -9,17 +9,13 @@ Teensy / STM32 / Pi as-is.
 
 ## Build blueprint & demo
 
-Full no-shield wiring (Teensy MQS out + ADC mic in), every pin and part value:
+Bench wiring — real parts, every pin (SM58→Komplete mic, MAX98357A I2S output):
+
+![bench wiring](docs/photo_wiring.png)
+
+System overview:
 
 ![wiring blueprint](docs/blueprint.png)
-
-Every connection end-to-end (each board pin → the exact component terminal):
-
-![connections](docs/connections.png)
-
-Pins marked on the actual board:
-
-![board pinout](docs/board_pinout.png)
 
 Engine-order cancellation converging (synthetic, phase-coherent — what the tach makes real):
 
