@@ -7,7 +7,7 @@ live.html) can be verified in a browser with no hardware. Emulates:
    GET /cmd?c=      -> c/r/s mode transitions
 Run:  python tools/mock_esp.py   (then open http://localhost:8771)
 """
-import json, math, time, os
+import json, math, time, os, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -17,6 +17,7 @@ T0 = None  # set on first request (avoid time at import)
 
 S = {"mu": 0.05, "orders": 6, "gain": 1.0, "mode": "idle", "cal_t": 0.0, "cal": 0}
 SMAG_CAL = [0.42, 0.38, 0.55, 0.30, 0.22, 0.18]   # plausible per-order |S| once calibrated
+LOCK = threading.Lock()                            # ThreadingHTTPServer -> guard shared S
 
 def telemetry(now):
     t = now - T0
@@ -51,21 +52,27 @@ class H(BaseHTTPRequestHandler):
         if T0 is None: T0 = time.time()
         u = urlparse(self.path); q = parse_qs(u.query); now = time.time()
         if u.path in ("/", "/live.html"):
-            self._send(200, "text/html", open(HTML, "rb").read()); return
+            with open(HTML, "rb") as f:
+                self._send(200, "text/html", f.read())
+            return
         if u.path == "/data":
-            self._send(200, "application/json", json.dumps(telemetry(now)).encode()); return
+            with LOCK:
+                body = json.dumps(telemetry(now)).encode()
+            self._send(200, "application/json", body); return
         if u.path == "/set":
             p = q.get("p", [""])[0]; v = q.get("v", ["0"])[0]
-            if p == "orders": S["orders"] = max(1, min(6, int(float(v))))
-            elif p == "mu":   S["mu"] = max(0.0, float(v))
-            elif p == "gain": S["gain"] = max(0.0, min(1.0, float(v)))
+            with LOCK:
+                if p == "orders": S["orders"] = max(1, min(6, int(float(v))))
+                elif p == "mu":   S["mu"] = max(0.0, float(v))
+                elif p == "gain": S["gain"] = max(0.0, min(1.0, float(v)))
             print(f"[set] {p} = {v}  -> would send 'SET {p} {v}' to Teensy")
             self._send(200, "text/plain", b"ok"); return
         if u.path == "/cmd":
             c = q.get("c", [""])[0]
-            if c == "c": S["mode"] = "calibrating"; S["cal_t"] = now; S["cal"] = 0
-            elif c == "r": S["mode"] = "running"
-            elif c == "s": S["mode"] = "calibrated" if S["mode"] != "idle" else "idle"
+            with LOCK:
+                if c == "c": S["mode"] = "calibrating"; S["cal_t"] = now; S["cal"] = 0
+                elif c == "r": S["mode"] = "running"
+                elif c == "s": S["mode"] = "stopped" if S["mode"] != "idle" else "idle"
             print(f"[cmd] {c}  -> would send '{c}' to Teensy   (mode now {S['mode']})")
             self._send(200, "text/plain", b"ok"); return
         self._send(404, "text/plain", b"nope")

@@ -8,7 +8,7 @@ from the tach pickup -- the algorithm is identical, only the ref source
 differs. Engine-order ANC cancels TONES, not broadband hiss; this measures
 exactly how much of the captured noise is tonal/cancellable.
 """
-import sys, argparse, os, tempfile, subprocess
+import argparse, os, tempfile, subprocess
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
@@ -26,7 +26,8 @@ def load_file(path):
     """Read any recording (iPhone .m4a, .mp3, .wav, .mov...) -> mono float32 @ FS.
     Routes everything through ffmpeg for uniform decode + downmix + resample."""
     print(f"[file] decoding {path} ...", flush=True)
-    tmp = tempfile.mktemp(suffix=".wav")
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+        tmp = tf.name
     try:
         subprocess.run(["ffmpeg","-v","error","-y","-i",path,
                         "-ac","1","-ar",str(FS),tmp], check=True)
@@ -59,7 +60,6 @@ def engine_order_cancel(x, tones, mu=0.02, leak=1e-4):
     """Offline narrowband FxLMS: one 2-tap adaptive oscillator per tone.
     Returns residual signal. Secondary path ~ unity here (offline, mic==error)."""
     N = len(x); n = np.arange(N)
-    y = np.zeros(N, dtype=np.float64)
     w = {f: np.zeros(2) for f in tones}          # [cos, sin] weights per order
     ref = {f: (np.cos(2*np.pi*f*n/FS), np.sin(2*np.pi*f*n/FS)) for f in tones}
     e = x.astype(np.float64).copy()
@@ -100,6 +100,7 @@ def main():
     x = load_file(a.file) if a.file else record(a.device, a.secs)
     rms = float(np.sqrt(np.mean(x**2)))
     peak = float(np.max(np.abs(x)))
+    os.makedirs("captures", exist_ok=True)
     wav = f"captures/{a.label}.wav"
     sf.write(wav, x, FS)
     print(f"[lvl] rms={rms:.4f}  peak={peak:.3f}  dBFS_rms={20*np.log10(rms+1e-9):.1f}  -> {wav}")
