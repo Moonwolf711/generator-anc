@@ -26,24 +26,27 @@ def place(path, cx, cy, w, label, lcol):
 T  = place(r"C:\Users\Owner\OneDrive\Desktop\teensy.jpg", 50, 36, 46, "YOUR TEENSY4 + ESP-12E", C_TXT)
 MA = place("docs/parts/max98357a.jpg", 86, 44, 17, "MAX98357A  (I2S amp)", C_OUT)
 SP = place("docs/parts/speaker.jpg", 86, 17, 15, "small 4-8Ω speaker", C_SPK)
-MI = place("docs/parts/max4466.jpg", 11, 40, 17, "MAX4466 mic  (or SM58>Komplete)", C_MIC)
+MI = place("docs/parts/sm58.jpg", 8, 42, 11, "SM58 (dynamic mic)", C_MIC)
 
-def maplabel(x, y, title, rows, col):
-    ax.add_patch(FancyBboxPatch((x, y), 17, 2.0+len(rows)*1.9, boxstyle="round,pad=0.3",
+def maplabel(x, y, title, rows, col, w=17):
+    ax.add_patch(FancyBboxPatch((x, y), w, 2.0+len(rows)*1.9, boxstyle="round,pad=0.3",
                                 fc="#10202f", ec=col, lw=2, zorder=5))
-    ax.text(x+8.5, y+1.4+len(rows)*1.9, title, ha="center", va="top", color=col,
+    ax.text(x+w/2, y+1.4+len(rows)*1.9, title, ha="center", va="top", color=col,
             fontsize=9.5, fontweight="bold", zorder=6)
     for i, r in enumerate(rows):
         ax.text(x+1, y+0.8+(len(rows)-1-i)*1.9, r, ha="left", va="bottom", color=C_TXT,
-                fontsize=8.5, family="monospace", zorder=6)
+                fontsize=8, family="monospace", zorder=6)
 
 def wire(p1, p2, col):
     ax.add_patch(FancyArrowPatch(p1, p2, arrowstyle="-|>", mutation_scale=16, lw=2.4,
                                  color=col, connectionstyle="arc3,rad=0.12", zorder=4))
 
-# MIC -> Teensy
+# SM58 -> Komplete -> A2
 wire((MI["r"], MI["cy"]), (T["l"], T["cy"]+4), C_MIC)
-maplabel(24, 44, "MIC -> TEENSY", ["OUT -> A2", "VCC -> 3V3", "GND -> GND"], C_MIC)
+maplabel(16, 41, "SM58 -> KOMPLETE A6 -> A2",
+         ["SM58 XLR -> Komplete ch1", "48V OFF, DIRECT-MONITOR on",
+          "LINE OUT -> 1uF -> A2", "A2 node: 10k->3V3 + 10k->GND",
+          "GND -> GND   (start level LOW)"], C_MIC, w=23)
 
 # Teensy -> MAX98357A (I2S)
 wire((T["r"], T["cy"]+3), (MA["l"], MA["cy"]), C_OUT)
