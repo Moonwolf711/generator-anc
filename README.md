@@ -21,6 +21,21 @@ Engine-order cancellation converging (synthetic, phase-coherent — what the tac
 
 ![cancellation demo](docs/demo.gif)
 
+## Hardware, firmware & phone cockpit
+
+The DSP core ships as real firmware with a live, browser-based control surface:
+
+- **Teensy 4.0 firmware** (`firmware/generator_anc_teensy/`) — the canceller as an `AudioStream` node,
+  a cycle-accurate **spark-tach ISR** (re-seats the oscillator phase on every spark), an engine-off
+  **Ŝ secondary-path calibration**, and serial command + telemetry.
+- **ESP-12E cockpit** (`firmware/esp12e_dashboard/`) — a self-contained SoftAP web app (no CDN, no
+  internet). Join WiFi `generator-anc` → `http://192.168.4.1` for live RPM / tach-lock / per-order
+  effort / Ŝ status, with **write-back** sliders (orders, μ, output gain) and Calibrate/Run/Stop that
+  tune the running controller.
+
+**Start here:** [`docs/bring-up-runbook.md`](docs/bring-up-runbook.md) — one ordered procedure from
+parts to cancelling. Stage docs: [spark tach](docs/spark-tach.md) · [output stage](docs/output-stage.md).
+
 ## Why engine-order, not broadband ANC
 
 Generator noise is periodic: a firing fundamental `f0` (set by RPM) plus harmonics. With a tach you
@@ -54,7 +69,7 @@ w  <- (1 - leak)·w  -  mu_eff · e · x'       // drives S{y} -> -d
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-./build/eoc_tests            # 5/5 unit tests
+./build/eoc_tests            # 9/9 unit tests
 ./build/genset_sim           # synthetic genset validation -> outputs/
 ```
 
@@ -80,9 +95,12 @@ A real generator recording was analyzed (`tasks/todo.md` has the detail). The de
 > jittering engine phase, and cancellation collapses. The synthetic sim cancels deeply precisely because
 > its reference is phase-coherent by construction.
 
-So the hardware needs: a **tach pickup** (or crank/cam sensor, or block accelerometer) for engine angle,
-plus a co-located **error mic**. The `replay_recording` tool and the analysis are kept as evidence and as
-the place a real tach signal would plug in.
+So the hardware needs a **tach pickup** for engine angle plus a co-located **error mic** — both now
+built and documented: the spark-tach front-end ([docs/spark-tach.md](docs/spark-tach.md)) feeds the
+firmware's tach ISR, and the [bring-up runbook](docs/bring-up-runbook.md) walks the full rig. The desk-fan
+experiment (`tools/fan_anc_test.py`) demonstrates the finding empirically: a clean tone cancels −22 dB,
+the *same tone drifting* with a fixed reference only −2 dB, and back to −22 dB once a true instantaneous
+frequency (a tach) drives it.
 
 ## Layout
 
