@@ -203,4 +203,29 @@ TEST(runtime_setters_behave) {
     CHECK_NEAR(c.mu(), 0.02, 1e-12);
 }
 
+// Replicates the firmware calProcess() lock-in (probe amplitude CAL_AMP) and checks it
+// recovers the TRUE |S| (not |S|*CAL_AMP) and the path phase. Guards the magnitude fix.
+TEST(cal_lockin_recovers_S_with_probe_amplitude) {
+    const double pi = 3.14159265358979323846;
+    const double fs = 44100.0, f = 91.5;        // an engine-order frequency
+    const double CAL_AMP = 0.30;                 // matches firmware
+    const double trueS = 0.42, truePh = 0.9;     // path gain + phase to recover
+    const unsigned SETTLE = 2048, WIN = 8192;
+    double I = 0.0, Q = 0.0, phase = 0.0;
+    const double omega = 2.0 * pi * f / fs;
+    for (unsigned n = 0; n < SETTLE + WIN; ++n) {
+        const double c = std::cos(phase), s = std::sin(phase);
+        const double mic = trueS * CAL_AMP * std::cos(phase + truePh);  // path applied to the probe
+        if (n >= SETTLE) { I += mic * c; Q += mic * s; }
+        phase += omega; if (phase > 2.0 * pi) phase -= 2.0 * pi;
+    }
+    const double mag = 2.0 / ((double)WIN * CAL_AMP) * std::sqrt(I * I + Q * Q);
+    double ph = std::atan2(-Q, I);
+    CHECK_NEAR(mag, trueS, 0.01);                // recovers |S|, not |S|*CAL_AMP
+    double dph = ph - truePh;
+    while (dph >  pi) dph -= 2.0 * pi;
+    while (dph < -pi) dph += 2.0 * pi;
+    CHECK_NEAR(dph, 0.0, 0.02);
+}
+
 int main() { return minitest::run(); }

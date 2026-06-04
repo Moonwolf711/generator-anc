@@ -34,6 +34,7 @@ const char* modeStr(int m) {
         case 1:  return "calibrating";
         case 2:  return "stopped";
         case 3:  return "running";
+        case 4:  return "S-FAIL";
         default: return "idle";
     }
 }

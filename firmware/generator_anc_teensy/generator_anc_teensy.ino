@@ -44,7 +44,11 @@ static constexpr double LEAK        = 1e-6;    // weight leakage
 // RPM gate for the tach debounce (reject ignition ringing / dropouts):
 static constexpr double RPM_MIN     = 1200.0;  // -> 20 Hz rev
 static constexpr double RPM_MAX     = 4200.0;  // -> 70 Hz rev
-static constexpr double NOMINAL_CAL_RPM = 3000.0;  // engine-off S_hat cal point (mid-range)
+// Engine-off S_hat calibration RPM. Default = this genset's MEASURED idle (~1830 RPM,
+// f0=30.5 Hz, from the field capture) so S_hat is probed at the REAL order frequencies
+// (30.5..183 Hz), not a nominal 50 Hz. Override live with "SET cal_rpm <v>".
+static constexpr double NOMINAL_CAL_RPM = 1830.0;
+static double g_calRpm = NOMINAL_CAL_RPM;
 // ESP-12E telemetry link. CONFIRMED Serial1 (Rev2 back silkscreen: "ESP8266: RX1/TX1",
 // jumpers SJ2 ESP-TX->RX1, SJ3 ESP-RX->TX1). Pins 0/1 are reserved for the ESP -- do not reuse.
 #define TELEM Serial1
@@ -79,6 +83,8 @@ public:
         calF0 = f0nom;
         calOrder = 1;
         calMode = true;
+        calMaxMag = 0.0;
+        calFailedFlag_ = false;
         Serial.print("calibrating S_hat at nominal f0=");
         Serial.print(f0nom, 1);
         Serial.println(" Hz -- engine OFF, speaker+mic in final position");
@@ -86,6 +92,7 @@ public:
     }
 
     bool calibrating() const { return calMode; }
+    bool calFailed() const { return calFailedFlag_; }   // true if the last cal never heard the probe
 
     void update(void) override {
         audio_block_t* in = receiveReadOnly(0);
@@ -109,6 +116,8 @@ private:
     static constexpr double CAL_AMP   = 0.30;    // probe amplitude
     static constexpr uint32_t CAL_SETTLE = 2048; // samples to ignore (path warm-up)
     static constexpr uint32_t CAL_WIN    = 8192; // correlation window
+    static constexpr double S_FLOOR   = 0.01;    // floor stored |S| so the FxLMS norm stays sane
+    static constexpr double S_HEARD   = 0.02;    // min peak |S| that means the probe was actually heard
 
     void runProcess(audio_block_t* in, audio_block_t* out) {
         const uint32_t now = ARM_DWT_CYCCNT;
@@ -162,24 +171,37 @@ private:
     }
 
     void finishOrder() {
-        const double mag = 2.0 / (double)CAL_WIN * sqrt(calI * calI + calQ * calQ);
+        // |S| = (mic amplitude)/(probe amplitude). The lock-in gives mic amplitude
+        // 2/N*sqrt(I^2+Q^2); divide by the probe amplitude CAL_AMP to get the true ratio.
+        const double mag = 2.0 / ((double)CAL_WIN * CAL_AMP) * sqrt(calI * calI + calQ * calQ);
         const double ph  = atan2(-calQ, calI);          // mic = mag*cos(theta + ph)
-        eoc.setSecondaryPath(calOrder, mag, ph);
+        if (mag > calMaxMag) calMaxMag = mag;
+        const double sStore = mag < S_FLOOR ? S_FLOOR : mag;   // keep the FxLMS norm finite on weak orders
+        eoc.setSecondaryPath(calOrder, sStore, ph);
         Serial.print("  S_hat order "); Serial.print(calOrder);
-        Serial.print(": mag="); Serial.print(mag, 4);
+        Serial.print(" @ "); Serial.print(calOrder * calF0, 1); Serial.print(" Hz");
+        Serial.print(": |S|="); Serial.print(mag, 4);
         Serial.print("  phase="); Serial.print(ph, 3); Serial.println(" rad");
         if (++calOrder > NUM_ORDERS) {
             calMode = false;
             eoc.reset();                                 // clear weights before live run
-            Serial.println("calibration done -> RUN");
+            if (calMaxMag < S_HEARD) {                   // never heard the probe -> bad cal
+                calFailedFlag_ = true;
+                eoc.setOutputGain(0.0);                  // stay muted until a good cal
+                Serial.println("** S_hat FAIL: probe not heard. Check amp gain, speaker, and error-mic wiring, then re-run 'c'. **");
+            } else {
+                Serial.println("calibration done -> RUN");
+            }
         } else {
             startOrder();
         }
     }
 
     volatile bool calMode = false;
+    bool calFailedFlag_ = false;
     int calOrder = 1;
     double calF0 = 50.0, calOmega = 0.0, calPhase = 0.0, calI = 0.0, calQ = 0.0;
+    double calMaxMag = 0.0;
     uint32_t calCount = 0;
 
     audio_block_t* inputQueueArray[1];
@@ -266,11 +288,12 @@ static void applyCommand(const char* s) {
         int i = 0; while (p[i] && p[i] != ' ' && i < 11) { name[i] = p[i]; ++i; }
         const char* sp = strchr(p, ' ');
         const double val = sp ? atof(sp + 1) : 0.0;
-        if      (strcmp(name, "mu")     == 0) eocNode.eoc.setMu(val);
-        else if (strcmp(name, "orders") == 0) eocNode.eoc.setActiveOrders((int)val);
-        else if (strcmp(name, "gain")   == 0) eocNode.eoc.setOutputGain(val);
+        if      (strcmp(name, "mu")      == 0) eocNode.eoc.setMu(val);
+        else if (strcmp(name, "orders")  == 0) eocNode.eoc.setActiveOrders((int)val);
+        else if (strcmp(name, "gain")    == 0) eocNode.eoc.setOutputGain(val);
+        else if (strcmp(name, "cal_rpm") == 0) g_calRpm = val;
     } else if (s[0] == 'c') {
-        eocNode.startCalibration(NOMINAL_CAL_RPM / 60.0);  // engine OFF
+        eocNode.startCalibration(g_calRpm / 60.0);  // engine OFF, probe at the real orders
     } else if (s[0] == 'r') {
         eocNode.eoc.setOutputGain(1.0);                    // run: unmute anti-noise
     } else if (s[0] == 's') {
@@ -287,9 +310,10 @@ static void readPort(Stream& port, char* buf, int& len, int cap) {
     }
 }
 
-// mode for telemetry: 0 idle(no tach) · 1 calibrating · 2 stopped/ready · 3 running
+// mode for telemetry: 0 idle(no tach) · 1 calibrating · 2 stopped/ready · 3 running · 4 S_hat fail
 static int modeCode() {
     if (eocNode.calibrating())           return 1;
+    if (eocNode.calFailed())             return 4;   // probe not heard -> recalibrate
     if (!AudioEOC::tachValid)            return 0;
     if (eocNode.eoc.outputGain() <= 0.0) return 2;
     return 3;
