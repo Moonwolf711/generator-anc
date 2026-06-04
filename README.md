@@ -13,6 +13,14 @@ Full no-shield wiring (Teensy MQS out + ADC mic in), every pin and part value:
 
 ![wiring blueprint](docs/blueprint.png)
 
+Every connection end-to-end (each board pin → the exact component terminal):
+
+![connections](docs/connections.png)
+
+Pins marked on the actual board:
+
+![board pinout](docs/board_pinout.png)
+
 Engine-order cancellation converging (synthetic, phase-coherent — what the tach makes real):
 
 ![cancellation demo](docs/demo.gif)

@@ -38,8 +38,8 @@ static constexpr double LEAK        = 1e-6;    // weight leakage
 static constexpr double RPM_MIN     = 1200.0;  // -> 20 Hz rev
 static constexpr double RPM_MAX     = 4200.0;  // -> 70 Hz rev
 static constexpr double NOMINAL_CAL_RPM = 3000.0;  // engine-off S_hat cal point (mid-range)
-// ESP-12E telemetry link (BurgessWorld Arduino-Teensy4 carrier: ESP on Serial1 / TXD1-RXD1 pins).
-// If your link is Serial2 (pins 7/8), change TELEM to Serial2. Watch the TXD1/RXD1 LEDs blink to confirm.
+// ESP-12E telemetry link. CONFIRMED Serial1 (Rev2 back silkscreen: "ESP8266: RX1/TX1",
+// jumpers SJ2 ESP-TX->RX1, SJ3 ESP-RX->TX1). Pins 0/1 are reserved for the ESP -- do not reuse.
 #define TELEM Serial1
 static constexpr long TELEM_BAUD = 115200;
 
